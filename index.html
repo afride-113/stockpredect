@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
     <title>🏛️ Master DSE Intelligence Battleground</title>
-    <link rel="manifest" href="data:application/json;base64,ewogICJuYW1lIjogIkRTRSBJbnRlbGxpZ2VuY2UiLAogICJzaG9ydF9uYW1lIjogIkRTRSBBSSIsCiAgInN0YXJ0X3VybCI6ICIuIiwKICAiZGlzcGxheSI6ICJzdGFuZGFsb25lIiwKICAiYmFja2dyb3VuZF9jb2xvciI6ICIjMGQxMTE3IiwKICAidGhlbWVfY29sb3I6ICIjMjM4NjM2IiwKICAiaWNvbnMiOiBbCiAgICB7CiAgICAgICJzcmMiOiAiaHR0cHM6Ly9pbWcuaWNvbnM4LmNvbS9mbHVlbnR5Lzk2LzAwMDAwMC9zaGllbGQucG5nIiwKICAgICAgInNpemVzIjogIjk2eDk2IiwKICAgICAgInR5cGUiOiAiaW1hZ2UvcG5nIgogICAgfQogIF0KfQ==">
+    <link rel="manifest" href="data:application/json;base64,ewogICJuYW1lIjogIkRTRSBJbnRlbGxpZ2VuY2UiLAogICJzaG9ydF9uYW1lIjogIkRTRSBBSSIsCiAgInN0YXJ0X3VybCI6ICIuIiwKICAmZGlzcGxheTogInN0YW5kYWxvbmUiLAogICJiYWNrZ3JvdW5kX2NvbG9yIjogIiMwZDExMTciLAogICJ0aGVtZV9jb2xvciI6ICIjMjM4NjM2IiwKICAiaWNvbnMiOiBbCiAgICB7CiAgICAgICJzcmMiOiAiaHR0cHM6Ly9pbWcuaWNvbnM4LmNvbS9mbHVlbnR5Lzk2LzAwMDAwMC9zaGllbGQucG5nIiwKICAgICAgInNpemVzIjogIjk2eDk2IiwKICAgICAgInR5cGUiOiAiaW1hZ2UvcG5nIgogICAgfQogIF0KfQ==">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@stlite/mountable@0.58.0/build/stlite.css" />
     <style>
       body { margin: 0; background: #0d1117; color: white; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
@@ -55,32 +55,55 @@ if 'tickers' not in st.session_state:
 # --- CORE ENGINE ---
 class DSEMasterEngine:
     def __init__(self):
-        self.proxy = "https://corsproxy.io/?"
+        self.proxies = [
+            "https://api.allorigins.win/raw?url=",
+            "https://corsproxy.io/?"
+        ]
+        # Robust Fallback List for DSE
+        self.fallbacks = ["GP", "BATBC", "SQURPHARMA", "ROBI", "BEXIMCO", "LAFSURWL", "RENATA", "UPGDCL", "ICB", "BRACBANK", "LHBL", "MJLBD", "TITASGAS", "BXPHARMA", "MARICO", "BERGERPBL", "SUMITPOWER", "EBL", "ISLAMI_BNK", "CITYBANK"]
 
     def get_all_tickers(self):
-        try:
-            url = f"{self.proxy}https://www.dsebd.org/latest_share_price_scroll_l.php"
-            res = requests.get(url, timeout=10)
-            soup = BeautifulSoup(res.text, 'html.parser')
-            links = soup.find_all('a', class_='ab01')
-            return sorted(list(set([l.text.strip() for l in links])))
-        except: return []
+        urls = [
+            "https://www.dsebd.org/latest_share_price_scroll_l.php",
+            "https://www.dsebd.org/dse_close_price.php"
+        ]
+        found = set()
+        for url in urls:
+            for proxy in self.proxies:
+                try:
+                    res = requests.get(proxy + url, timeout=10)
+                    if res.status_code == 200:
+                        soup = BeautifulSoup(res.text, 'html.parser')
+                        links = soup.find_all('a', class_='ab01')
+                        for l in links:
+                            t = l.text.strip()
+                            if t and len(t) < 15: found.add(t)
+                    if found: break
+                except: continue
+            if found: break
+
+        # Merge with fallbacks to ensure non-zero
+        final_list = sorted(list(found.union(set(self.fallbacks))))
+        return final_list
 
     def fetch_history(self, ticker):
-        try:
-            start = (datetime.now() - timedelta(days=365)).strftime('%Y-%m-%d')
-            url = f"{self.proxy}https://www.dsebd.org/day_by_day_stats.php?tk={ticker}&startDate={start}&endDate={datetime.now().strftime('%Y-%m-%d')}&searchTag=Search"
-            res = requests.get(url, timeout=10)
-            soup = BeautifulSoup(res.text, 'html.parser')
-            table = next((t for t in soup.find_all('table') if "Close" in t.text), None)
-            if not table: return None
-            data = []
-            for row in table.find_all('tr')[1:]:
-                cols = row.find_all('td')
-                if len(cols) >= 10:
-                    data.append(float(cols[8].text.strip().replace(',', '')))
-            return data[::-1] # Order: oldest to newest
-        except: return None
+        for proxy in self.proxies:
+            try:
+                start = (datetime.now() - timedelta(days=365)).strftime('%Y-%m-%d')
+                url = f"https://www.dsebd.org/day_by_day_stats.php?tk={ticker}&startDate={start}&endDate={datetime.now().strftime('%Y-%m-%d')}&searchTag=Search"
+                res = requests.get(proxy + url, timeout=10)
+                if res.status_code != 200: continue
+                soup = BeautifulSoup(res.text, 'html.parser')
+                table = next((t for t in soup.find_all('table') if "Close" in t.text), None)
+                if not table: continue
+                data = []
+                for row in table.find_all('tr')[1:]:
+                    cols = row.find_all('td')
+                    if len(cols) >= 10:
+                        data.append(float(cols[8].text.strip().replace(',', '')))
+                if data: return data[::-1]
+            except: continue
+        return None
 
 class DSEInference:
     def predict(self, prices):
@@ -105,12 +128,11 @@ st.title("🏛️ DSE Market Intelligence Hub")
 if st.button("🚀 Initialize Full Market Discovery"):
     with st.status("📡 Connecting to DSE Aggregates...", expanded=True) as status:
         st.session_state.tickers = engine.get_all_tickers()
-        status.update(label=f"✅ Found {len(st.session_state.tickers)} Active Tickers", state="complete")
+        status.update(label=f"✅ Loaded {len(st.session_state.tickers)} Tickers (Live + Fallback)", state="complete")
     st.session_state.scanning = True
 
 # Scanning Logic
 if st.session_state.scanning and st.session_state.tickers:
-    # Get unprocessed
     processed = st.session_state.master_db['Ticker'].tolist()
     pending = [t for t in st.session_state.tickers if t not in processed]
 
@@ -128,10 +150,9 @@ if st.session_state.scanning and st.session_state.tickers:
                 "Trend": trend
             }
             st.session_state.master_db = pd.concat([st.session_state.master_db, pd.DataFrame([new_row])], ignore_index=True)
-            time.sleep(0.2)
+            time.sleep(0.1)
             st.rerun()
         else:
-            # Skip failed
             st.session_state.master_db = pd.concat([st.session_state.master_db, pd.DataFrame([{"Ticker": ticker, "Trend": "ERROR"}])], ignore_index=True)
             st.rerun()
     else:
@@ -141,13 +162,11 @@ if st.session_state.scanning and st.session_state.tickers:
 # Display Master Table
 st.subheader("📊 Full Market Outlook")
 if not st.session_state.master_db.empty:
-    # High-performance search
     search = st.text_input("🔍 Search Ticker", "")
     df_show = st.session_state.master_db.copy()
     if search:
         df_show = df_show[df_show['Ticker'].str.contains(search.upper())]
 
-    # Custom display with colors
     def style_trend(val):
         color = '#3fb950' if val == 'INCREASE' else '#f85149' if val == 'DROP' else '#c9d1d9'
         return f'color: {color}; font-weight: bold'
@@ -158,7 +177,6 @@ else:
 
 st.sidebar.markdown("---")
 st.sidebar.caption("PWA Ready | 100% Local Browser Computation")
-st.sidebar.info("All prices predicted using Google TimesFM and Amazon Chronos mimics adapted for DSE dynamics.")
 `
           },
         },
