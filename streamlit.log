@@ -1,14 +1,0 @@
-
-Collecting usage statistics. To deactivate, set browser.gatherUsageStats to false.
-
-2026-06-26 23:19:13.159 Uvicorn server started on 0.0.0.0:8501
-
-  You can now view your Streamlit app in your browser.
-
-  Local URL: http://localhost:8501
-  Network URL: http://192.168.0.2:8501
-  External URL: http://34.134.215.5:8501
-
-Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
-[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
-Loading weights:   0%|          | 0/131 [00:00<?, ?it/s]Loading weights: 100%|██████████| 131/131 [00:00<00:00, 3271.30it/s]
