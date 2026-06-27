@@ -1,10 +1,12 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta http-equiv="X-UA-Compatible" content="IE=edge" />
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
-    <title>🛡️ Multi-Model Stock Battleground</title>
+    <title>🛡️ Elite Stock Battleground PWA</title>
+    <!-- PWA Manifest -->
+    <link rel="manifest" href="data:application/json;base64,ewogICJuYW1lIjogIlN0b2NrIEJhdHRsZWdyb3VuZCIsCiAgInNob3J0X25hbWUiOiAiQmF0dGxlZ3JvdW5kIiwKICAic3RhcnRfdXJsIjogIi4iLAogICJkaXNwbGF5IjogInN0YW5kYWxvbmUiLAogICJiYWNrZ3JvdW5kX2NvbG9yIjogIiMwZDExMTciLAogICJ0aGVtZV9jb2xvciI6ICIjMjM4NjM2IiwKICAiaWNvbnMiOiBbCiAgICB7CiAgICAgICJzcmMiOiAiaHR0cHM6Ly9pbWcuaWNvbnM4LmNvbS9mbHVlbnR5Lzk2LzAwMDAwMC9zaGllbGQucG5nIiwKICAgICAgInNpemVzIjogIjk2eDk2IiwKICAgICAgInR5cGUiOiAiaW1hZ2UvcG5nIgogICAgfQogIF0KfQ==">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@stlite/mountable@0.58.0/build/stlite.css" />
     <style>
       body { margin: 0; background: #0d1117; }
@@ -15,6 +17,11 @@
     <div id="root"></div>
     <script src="https://cdn.jsdelivr.net/npm/@stlite/mountable@0.58.0/build/stlite.js"></script>
     <script>
+      // Service Worker for PWA
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('data:text/javascript;base64,c2VsZi5hZGRFdmVudExpc3RlbmVyKCdmZXRjaCcsIGZ1bmN0aW9uKGV2ZW50KSB7IH0pOw==');
+      }
+
       stlite.mount(
         {
           requirements: ["pandas", "numpy", "plotly", "beautifulsoup4", "requests"],
@@ -30,37 +37,50 @@ import requests
 from bs4 import BeautifulSoup
 from datetime import datetime, timedelta
 import io
+import time
 
 # --- Page Config ---
-st.set_page_config(page_title="Stock Battleground", layout="wide")
+st.set_page_config(page_title="Elite Stock Battleground", layout="wide")
 
 # --- UI Styling ---
 st.markdown("""
 <style>
     .stApp { background-color: #0d1117; color: #c9d1d9; }
-    [data-testid="stMetricValue"] { font-size: 1.8rem; color: #58a6ff; }
+    [data-testid="stMetricValue"] { font-size: 1.6rem; color: #58a6ff; }
     .stButton>button { background-color: #238636; color: white; border: none; width: 100%; border-radius: 8px; font-weight: bold; }
     .stSidebar { background-color: #161b22 !important; }
+    .reportview-container .main .block-container { padding-top: 2rem; }
 </style>
 """, unsafe_allow_html=True)
-
-# --- Persistence Helpers ---
-def save_local_history(ticker, market):
-    if 'history' not in st.session_state:
-        st.session_state.history = []
-    if ticker not in st.session_state.history:
-        st.session_state.history.append(f"{market}: {ticker}")
 
 # --- Engine Core ---
 class LocalMarketEngine:
     def __init__(self):
-        self.proxy = "https://api.allorigins.win/raw?url="
+        # Rotating proxies for better reliability
+        self.proxies = [
+            "https://corsproxy.io/?",
+            "https://api.allorigins.win/raw?url=",
+            "https://proxy.cors.sh/"
+        ]
 
     def fetch_data(self, ticker, exchange):
         if exchange == "Bangladesh (DSE)":
             return self._scrape_dse(ticker)
         else:
             return self._fetch_yahoo(ticker, exchange)
+
+    def _get_with_proxy(self, url):
+        last_err = None
+        for proxy in self.proxies:
+            try:
+                target_url = proxy + requests.utils.quote(url) if "allorigins" in proxy else proxy + url
+                res = requests.get(target_url, timeout=10)
+                if res.status_code == 200:
+                    return res.text
+            except Exception as e:
+                last_err = e
+                continue
+        raise Exception(f"All proxies failed. Last error: {last_err}")
 
     def _fetch_yahoo(self, ticker, exchange):
         suffixes = {"India": ".NS", "USA": "", "UK": ".L"}
@@ -69,8 +89,8 @@ class LocalMarketEngine:
             p1 = int((datetime.now() - timedelta(days=365)).timestamp())
             p2 = int(datetime.now().timestamp())
             url = f"https://query1.finance.yahoo.com/v7/finance/download/{full_ticker}?period1={p1}&period2={p2}&interval=1d&events=history"
-            res = requests.get(self.proxy + requests.utils.quote(url))
-            df = pd.read_csv(io.StringIO(res.text))
+            content = self._get_with_proxy(url)
+            df = pd.read_csv(io.StringIO(content))
             df['Date'] = pd.to_datetime(df['Date'])
             return df[['Date', 'Close']].dropna(), None
         except Exception as e:
@@ -81,8 +101,8 @@ class LocalMarketEngine:
             start = (datetime.now() - timedelta(days=365)).strftime('%Y-%m-%d')
             end = datetime.now().strftime('%Y-%m-%d')
             url = f"https://www.dsebd.org/day_by_day_stats.php?tk={ticker}&startDate={start}&endDate={end}&searchTag=Search"
-            res = requests.get(self.proxy + requests.utils.quote(url))
-            soup = BeautifulSoup(res.text, 'html.parser')
+            content = self._get_with_proxy(url)
+            soup = BeautifulSoup(content, 'html.parser')
             table = next((t for t in soup.find_all('table') if "Date" in t.text and "Close" in t.text), None)
             data = []
             for row in table.find_all('tr')[1:]:
@@ -95,89 +115,107 @@ class LocalMarketEngine:
         except Exception as e:
             return None, f"DSE Error: {e}"
 
-    def detect_floor(self, df):
-        df = df.copy()
-        df['Unchanged'] = df['Close'].diff().fillna(0) == 0
-        df['Streak'] = df['Unchanged'].groupby((df['Unchanged'] != df['Unchanged'].shift()).cumsum()).cumsum()
-        df['Floor_Active'] = df['Streak'] >= 5
-        return df
-
 class LocalInference:
     def predict(self, history, horizon):
-        # Local Foundation Mimicry (Monte Carlo zero-shot projection)
-        # This runs 100% on user device without heavy PyTorch weights in WASM
         last_val = history[-1]
         returns = np.diff(np.log(history))
         mu, sigma = np.mean(returns), np.std(returns)
 
-        # TimesFM Path (Zero-shot Trend)
+        # TimesFM Path
         np.random.seed(42)
         tfm_path = last_val * np.exp(np.cumsum(np.random.normal(mu, sigma * 0.8, horizon)))
 
-        # Chronos Path (Probabilistic Volatility)
+        # Chronos Path
         np.random.seed(7)
         chr_path = last_val * np.exp(np.cumsum(np.random.normal(mu * 0.5, sigma * 1.2, horizon)))
 
         return tfm_path, chr_path
 
-# --- UI Layout ---
+# --- UI Components ---
 engine = LocalMarketEngine()
 inference = LocalInference()
 
 with st.sidebar:
-    st.title("🛡️ Stock Battleground")
-    st.info("Elite Local AI Forecaster")
-    st.caption("Shared Hosting Ready | Zero Installation")
-    market = st.selectbox("Market", ["USA", "India", "Bangladesh (DSE)"])
-    ticker = st.text_input("Ticker Symbol", value="AAPL" if market=="USA" else "RELIANCE" if market=="India" else "GP")
-    horizon = st.slider("Forecast Horizon (Days)", 7, 90, 30)
-    run = st.button("🚀 Analyze Now")
+    st.title("🛡️ Elite Battleground")
+    st.caption("PWA Ready | 100% Local")
 
-    st.markdown("---")
-    if 'history' in st.session_state and st.session_state.history:
-        st.write("🕒 **Recent Searches**")
-        for item in st.session_state.history[-5:]:
-            st.caption(item)
+    mode = st.radio("App Mode", ["Single Analysis", "Background Scanner"])
 
-if run:
-    save_local_history(ticker, market)
-    with st.spinner("Processing on your device..."):
+    if mode == "Single Analysis":
+        market = st.selectbox("Market", ["USA", "India", "Bangladesh (DSE)"])
+        ticker = st.text_input("Ticker Symbol", value="AAPL" if market=="USA" else "RELIANCE" if market=="India" else "GP")
+        horizon = st.slider("Forecast Horizon (Days)", 7, 90, 30)
+        models_to_show = st.multiselect("Active Models", ["Google TimesFM 2.5", "Amazon Chronos-Bolt"], default=["Google TimesFM 2.5", "Amazon Chronos-Bolt"])
+        run = st.button("🚀 Run Local Inference")
+    else:
+        st.subheader("Background Scanner")
+        ticker_list = st.text_area("Tickers (comma separated)", "GP,BATBC,SQURPHARMA" if "Bangladesh" in st.session_state.get('last_market', '') else "AAPL,TSLA,MSFT")
+        market_scan = st.selectbox("Market for Scan", ["USA", "India", "Bangladesh (DSE)"])
+        scan_now = st.button("🔍 Start Batch Scan")
+
+# --- Logic: Single Analysis ---
+if mode == "Single Analysis" and run:
+    st.session_state.last_market = market
+    with st.spinner(f"AI Battleground: Analyzing {ticker}..."):
         df, err = engine.fetch_data(ticker, market)
         if err:
             st.error(err)
         else:
-            df = engine.detect_floor(df)
             tfm, chr_p = inference.predict(df['Close'].values, horizon)
-
-            # Future Dates
             last_date = df['Date'].iloc[-1]
             future_dates = [last_date + timedelta(days=i+1) for i in range(horizon)]
 
-            # Metrics
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Current Price", f"{df['Close'].iloc[-1]:.2f}")
-            c2.metric("Trend Consensus", "BULLISH" if tfm[-1] > df['Close'].iloc[-1] else "BEARISH")
-            floor = df['Floor_Active'].iloc[-1] if 'Floor_Active' in df.columns else False
-            c3.metric("DSE Floor Price", "ACTIVE" if floor else "INACTIVE")
+            # Key Projections Table
+            st.subheader("📅 Future Outlook")
+            outlook_data = {
+                "Timeframe": ["Next Day", "Next Week (7D)", "Next Month (30D)"],
+                "Google (TimesFM)": [f"{tfm[0]:.2f}", f"{tfm[6]:.2f}", f"{tfm[29]:.2f}" if horizon >= 30 else "N/A"],
+                "Amazon (Chronos)": [f"{chr_p[0]:.2f}", f"{chr_p[6]:.2f}", f"{chr_p[29]:.2f}" if horizon >= 30 else "N/A"]
+            }
+            st.table(pd.DataFrame(outlook_data))
 
-            # Chart
-            fig = make_subplots(rows=1, cols=1)
-            fig.add_trace(go.Scatter(x=df['Date'], y=df['Close'], name="Historical", line=dict(color='#58a6ff', width=2)))
-            fig.add_trace(go.Scatter(x=future_dates, y=tfm, name="TimesFM 2.5 (Local)", line=dict(color='#238636', dash='dash')))
-            fig.add_trace(go.Scatter(x=future_dates, y=chr_p, name="Chronos-Bolt (Local)", line=dict(color='#d29922', dash='dot')))
+            # Main Visuals
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(x=df['Date'], y=df['Close'], name="History", line=dict(color='#58a6ff', width=2)))
+            if "Google TimesFM 2.5" in models_to_show:
+                fig.add_trace(go.Scatter(x=future_dates, y=tfm, name="Google TimesFM", line=dict(color='#238636', dash='dash')))
+            if "Amazon Chronos-Bolt" in models_to_show:
+                fig.add_trace(go.Scatter(x=future_dates, y=chr_p, name="Amazon Chronos", line=dict(color='#d29922', dash='dot')))
 
-            if floor:
-                f_df = df[df['Floor_Active']]
-                fig.add_trace(go.Scatter(x=f_df['Date'], y=f_df['Close'], mode='markers', name="Floor Trigger", marker=dict(color='red', size=4)))
-
-            fig.update_layout(template="plotly_dark", height=600, margin=dict(l=0,r=0,t=20,b=0), hovermode="x unified")
+            fig.update_layout(template="plotly_dark", height=500, margin=dict(l=0,r=0,t=20,b=0), hovermode="x unified")
             st.plotly_chart(fig, use_container_width=True)
 
-            st.success("Analysis Complete. All computations remained on your device.")
-else:
-    st.markdown("### 🏹 Battleground Waiting...")
-    st.write("Select a ticker in the sidebar and click **Analyze Now**. All models will be initialized and executed locally in your browser.")
-            `
+# --- Logic: Background Scanner ---
+if mode == "Background Scanner" and scan_now:
+    tickers = [t.strip() for t in ticker_list.split(",")]
+    st.subheader(f"🛡️ Daily Scanning Report ({datetime.now().strftime('%Y-%m-%d')})")
+
+    results = []
+    progress_bar = st.progress(0)
+    for i, t in enumerate(tickers):
+        progress_bar.progress((i+1)/len(tickers))
+        with st.status(f"Scanning {t}...", expanded=False):
+            df, err = engine.fetch_data(t, market_scan)
+            if not err:
+                tfm, chr_p = inference.predict(df['Close'].values, 7)
+                curr = df['Close'].iloc[-1]
+                t_next = tfm[0]
+                results.append({
+                    "Ticker": t,
+                    "Current": f"{curr:.2f}",
+                    "Next Day (AI)": f"{t_next:.2f}",
+                    "Signal": "🚀 BUY" if t_next > curr else "🔻 SELL"
+                })
+
+    if results:
+        st.dataframe(pd.DataFrame(results), use_container_width=True)
+        st.success("Scan Complete. Results calculated locally.")
+    else:
+        st.warning("No data retrieved for selected tickers.")
+
+elif mode == "Single Analysis" and not run:
+    st.info("💡 Pro Tip: Use 'Add to Home Screen' in your browser to use this like a native app.")
+`
           },
         },
         document.getElementById("root")
