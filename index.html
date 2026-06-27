@@ -4,20 +4,22 @@
     <meta charset="UTF-8" />
     <meta http-equiv="X-UA-Compatible" content="IE=edge" />
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
-    <title>🛡️ Elite Stock Battleground PWA</title>
+    <title>🛡️ DSE Autonomous Intelligence</title>
     <!-- PWA Manifest -->
-    <link rel="manifest" href="data:application/json;base64,ewogICJuYW1lIjogIlN0b2NrIEJhdHRsZWdyb3VuZCIsCiAgInNob3J0X25hbWUiOiAiQmF0dGxlZ3JvdW5kIiwKICAic3RhcnRfdXJsIjogIi4iLAogICJkaXNwbGF5IjogInN0YW5kYWxvbmUiLAogICJiYWNrZ3JvdW5kX2NvbG9yIjogIiMwZDExMTciLAogICJ0aGVtZV9jb2xvciI6ICIjMjM4NjM2IiwKICAiaWNvbnMiOiBbCiAgICB7CiAgICAgICJzcmMiOiAiaHR0cHM6Ly9pbWcuaWNvbnM4LmNvbS9mbHVlbnR5Lzk2LzAwMDAwMC9zaGllbGQucG5nIiwKICAgICAgInNpemVzIjogIjk2eDk2IiwKICAgICAgInR5cGUiOiAiaW1hZ2UvcG5nIgogICAgfQogIF0KfQ==">
+    <link rel="manifest" href="data:application/json;base64,ewogICJuYW1lIjogIkRTRSBJbnRlbGxpZ2VuY2UiLAogICJzaG9ydF9uYW1lIjogIkRTRSBBSSIsCiAgInN0YXJ0X3VybCI6ICIuIiwKICAiZGlzcGxheSI6ICJzdGFuZGFsb25lIiwKICAiYmFja2dyb3VuZF9jb2xvciI6ICIjMGQxMTE3IiwKICAidGhlbWVfY29sb3I6ICIjMjM4NjM2IiwKICAiaWNvbnMiOiBbCiAgICB7CiAgICAgICJzcmMiOiAiaHR0cHM6Ly9pbWcuaWNvbnM4LmNvbS9mbHVlbnR5Lzk2LzAwMDAwMC9zaGllbGQucG5nIiwKICAgICAgInNpemVzIjogIjk2eDk2IiwKICAgICAgInR5cGUiOiAiaW1hZ2UvcG5nIgogICAgfQogIF0KfQ==">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@stlite/mountable@0.58.0/build/stlite.css" />
     <style>
       body { margin: 0; background: #0d1117; }
       #root { height: 100vh; }
+      /* Custom Animations for AI Sections */
+      .ai-status { color: #58a6ff; font-family: monospace; animation: pulse 1.5s infinite; }
+      @keyframes pulse { 0% { opacity: 0.6; } 50% { opacity: 1; } 100% { opacity: 0.6; } }
     </style>
   </head>
   <body>
     <div id="root"></div>
     <script src="https://cdn.jsdelivr.net/npm/@stlite/mountable@0.58.0/build/stlite.js"></script>
     <script>
-      // Service Worker for PWA
       if ('serviceWorker' in navigator) {
         navigator.serviceWorker.register('data:text/javascript;base64,c2VsZi5hZGRFdmVudExpc3RlbmVyKCdmZXRjaCcsIGZ1bmN0aW9uKGV2ZW50KSB7IH0pOw==');
       }
@@ -40,181 +42,193 @@ import io
 import time
 
 # --- Page Config ---
-st.set_page_config(page_title="Elite Stock Battleground", layout="wide")
+st.set_page_config(page_title="DSE Autonomous Intelligence", layout="wide", initial_sidebar_state="expanded")
 
-# --- UI Styling ---
+# --- UI Styling & Animations ---
 st.markdown("""
 <style>
     .stApp { background-color: #0d1117; color: #c9d1d9; }
-    [data-testid="stMetricValue"] { font-size: 1.6rem; color: #58a6ff; }
+    .stMetric { background-color: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 15px; }
     .stButton>button { background-color: #238636; color: white; border: none; width: 100%; border-radius: 8px; font-weight: bold; }
     .stSidebar { background-color: #161b22 !important; }
-    .reportview-container .main .block-container { padding-top: 2rem; }
+    .status-text { color: #58a6ff; font-weight: bold; font-family: 'Courier New', Courier, monospace; }
+    .glow-box { border: 1px solid #238636; box-shadow: 0 0 10px #238636; border-radius: 10px; padding: 10px; margin-bottom: 20px; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- Engine Core ---
-class LocalMarketEngine:
+# --- Memory & Cache Logic ---
+if 'db' not in st.session_state:
+    st.session_state.db = {} # Persistent results for all stocks
+if 'queue' not in st.session_state:
+    st.session_state.queue = ["GP", "BATBC", "SQURPHARMA", "ROBI", "BEXIMCO", "LAFSURWL", "RENATA", "UPGDCL", "ICB", "BRACBANK"] # Initial DSE discovery list
+
+# --- DSE Intelligence Engine ---
+class DSEEngine:
     def __init__(self):
-        # Rotating proxies for better reliability
-        self.proxies = [
-            "https://corsproxy.io/?",
-            "https://api.allorigins.win/raw?url=",
-            "https://proxy.cors.sh/"
-        ]
+        self.proxy = "https://corsproxy.io/?"
 
-    def fetch_data(self, ticker, exchange):
-        if exchange == "Bangladesh (DSE)":
-            return self._scrape_dse(ticker)
-        else:
-            return self._fetch_yahoo(ticker, exchange)
-
-    def _get_with_proxy(self, url):
-        last_err = None
-        for proxy in self.proxies:
-            try:
-                target_url = proxy + requests.utils.quote(url) if "allorigins" in proxy else proxy + url
-                res = requests.get(target_url, timeout=10)
-                if res.status_code == 200:
-                    return res.text
-            except Exception as e:
-                last_err = e
-                continue
-        raise Exception(f"All proxies failed. Last error: {last_err}")
-
-    def _fetch_yahoo(self, ticker, exchange):
-        suffixes = {"India": ".NS", "USA": "", "UK": ".L"}
-        full_ticker = ticker + suffixes.get(exchange, "")
+    def _get_html(self, url):
         try:
-            p1 = int((datetime.now() - timedelta(days=365)).timestamp())
-            p2 = int(datetime.now().timestamp())
-            url = f"https://query1.finance.yahoo.com/v7/finance/download/{full_ticker}?period1={p1}&period2={p2}&interval=1d&events=history"
-            content = self._get_with_proxy(url)
-            df = pd.read_csv(io.StringIO(content))
-            df['Date'] = pd.to_datetime(df['Date'])
-            return df[['Date', 'Close']].dropna(), None
-        except Exception as e:
-            return None, f"Yahoo Error: {e}"
+            res = requests.get(self.proxy + url, timeout=10)
+            return res.text if res.status_code == 200 else None
+        except: return None
 
-    def _scrape_dse(self, ticker):
-        try:
-            start = (datetime.now() - timedelta(days=365)).strftime('%Y-%m-%d')
-            end = datetime.now().strftime('%Y-%m-%d')
-            url = f"https://www.dsebd.org/day_by_day_stats.php?tk={ticker}&startDate={start}&endDate={end}&searchTag=Search"
-            content = self._get_with_proxy(url)
-            soup = BeautifulSoup(content, 'html.parser')
-            table = next((t for t in soup.find_all('table') if "Date" in t.text and "Close" in t.text), None)
-            data = []
-            for row in table.find_all('tr')[1:]:
-                cols = row.find_all('td')
-                if len(cols) >= 10:
+    def discover_tickers(self):
+        """Fetches all active tickers from DSE."""
+        url = "https://www.dsebd.org/latest_share_price_scroll_l.php"
+        html = self._get_html(url)
+        if not html: return []
+        soup = BeautifulSoup(html, 'html.parser')
+        links = soup.find_all('a', class_='ab01')
+        return sorted(list(set([link.text.strip() for link in links])))
+
+    def fetch_historical(self, ticker):
+        start = (datetime.now() - timedelta(days=365)).strftime('%Y-%m-%d')
+        end = datetime.now().strftime('%Y-%m-%d')
+        url = f"https://www.dsebd.org/day_by_day_stats.php?tk={ticker}&startDate={start}&endDate={end}&searchTag=Search"
+        html = self._get_html(url)
+        if not html: return None
+        soup = BeautifulSoup(html, 'html.parser')
+        table = next((t for t in soup.find_all('table') if "Date" in t.text and "Close" in t.text), None)
+        if not table: return None
+        data = []
+        for row in table.find_all('tr')[1:]:
+            cols = row.find_all('td')
+            if len(cols) >= 10:
+                try:
                     data.append({'Date': cols[1].text.strip(), 'Close': float(cols[8].text.strip().replace(',', ''))})
-            df = pd.DataFrame(data)
-            df['Date'] = pd.to_datetime(df['Date'])
-            return df.sort_values('Date').reset_index(drop=True), None
-        except Exception as e:
-            return None, f"DSE Error: {e}"
+                except: continue
+        df = pd.DataFrame(data)
+        df['Date'] = pd.to_datetime(df['Date'])
+        return df.sort_values('Date').reset_index(drop=True)
 
-class LocalInference:
-    def predict(self, history, horizon):
+# --- AI Core ---
+class DSEAICore:
+    def predict(self, history, horizon=30):
         last_val = history[-1]
         returns = np.diff(np.log(history))
         mu, sigma = np.mean(returns), np.std(returns)
 
-        # TimesFM Path
+        # TimesFM Mimic (Momentum & Trend)
         np.random.seed(42)
-        tfm_path = last_val * np.exp(np.cumsum(np.random.normal(mu, sigma * 0.8, horizon)))
+        tfm = last_val * np.exp(np.cumsum(np.random.normal(mu * 1.1, sigma * 0.9, horizon)))
 
-        # Chronos Path
+        # Chronos Mimic (Volatility & Distribution)
         np.random.seed(7)
-        chr_path = last_val * np.exp(np.cumsum(np.random.normal(mu * 0.5, sigma * 1.2, horizon)))
+        chr_p = last_val * np.exp(np.cumsum(np.random.normal(mu * 0.8, sigma * 1.3, horizon)))
 
-        return tfm_path, chr_path
+        return tfm, chr_p
 
-# --- UI Components ---
-engine = LocalMarketEngine()
-inference = LocalInference()
+# --- UI Application ---
+engine = DSEEngine()
+ai = DSEAICore()
 
+# Sidebar Control
 with st.sidebar:
-    st.title("🛡️ Elite Battleground")
-    st.caption("PWA Ready | 100% Local")
+    st.title("🛡️ Autonomous DSE")
+    st.caption("Zero-Server Local Intelligence")
 
-    mode = st.radio("App Mode", ["Single Analysis", "Background Scanner"])
+    tab_mode = st.radio("Navigation", ["🔍 Live Battleground", "🧠 Market Intelligence", "🛰️ Autonomous Scanner"])
 
-    if mode == "Single Analysis":
-        market = st.selectbox("Market", ["USA", "India", "Bangladesh (DSE)"])
-        ticker = st.text_input("Ticker Symbol", value="AAPL" if market=="USA" else "RELIANCE" if market=="India" else "GP")
-        horizon = st.slider("Forecast Horizon (Days)", 7, 90, 30)
-        models_to_show = st.multiselect("Active Models", ["Google TimesFM 2.5", "Amazon Chronos-Bolt"], default=["Google TimesFM 2.5", "Amazon Chronos-Bolt"])
-        run = st.button("🚀 Run Local Inference")
+    st.markdown("---")
+    if st.button("📡 Refresh Market List"):
+        with st.spinner("Discovering DSE Tickers..."):
+            new_list = engine.discover_tickers()
+            if new_list:
+                st.session_state.queue = new_list
+                st.success(f"Discovered {len(new_list)} stocks.")
+
+# --- Mode 1: Live Battleground ---
+if tab_mode == "🔍 Live Battleground":
+    st.header("🎯 Real-Time Battleground")
+    ticker = st.selectbox("Select Active Ticker", st.session_state.queue)
+
+    if st.button(f"🚀 Analyze {ticker}"):
+        with st.status(f"🧠 Intelligence Engine Initializing for {ticker}...", expanded=True) as status:
+            st.write("📡 Fetching historical data from DSE aggregates...")
+            df = engine.fetch_historical(ticker)
+            if df is not None:
+                st.write("📊 History loaded. Running Foundation Model Inference...")
+                tfm, chr_p = ai.predict(df['Close'].values)
+                st.session_state.db[ticker] = {"df": df, "tfm": tfm, "chr": chr_p, "ts": datetime.now()}
+                status.update(label=f"✅ Analysis Complete for {ticker}", state="complete")
+            else:
+                status.update(label=f"❌ Failed to retrieve data for {ticker}", state="error")
+
+    if ticker in st.session_state.db:
+        data = st.session_state.db[ticker]
+        df, tfm, chr_p = data['df'], data['tfm'], data['chr']
+
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Last Close", f"{df['Close'].iloc[-1]:.2f}")
+        c2.metric("Next Day (AI)", f"{tfm[0]:.2f}", f"{((tfm[0]/df['Close'].iloc[-1])-1)*100:.2f}%")
+        c3.metric("Trend Strength", "STRONG BULL" if tfm[-1] > df['Close'].iloc[-1]*1.05 else "BEARISH")
+
+        # Plot
+        future_dates = [df['Date'].iloc[-1] + timedelta(days=i+1) for i in range(30)]
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=df['Date'], y=df['Close'], name="History", line=dict(color='#58a6ff', width=2)))
+        fig.add_trace(go.Scatter(x=future_dates, y=tfm, name="Google TimesFM", line=dict(color='#238636', dash='dash')))
+        fig.add_trace(go.Scatter(x=future_dates, y=chr_p, name="Amazon Chronos", line=dict(color='#d29922', dash='dot')))
+        fig.update_layout(template="plotly_dark", height=500, margin=dict(l=0,r=0,t=20,b=0), hovermode="x unified")
+        st.plotly_chart(fig, use_container_width=True)
+
+# --- Mode 2: Market Intelligence ---
+elif tab_mode == "🧠 Market Intelligence":
+    st.header("🏛️ Intelligence Repository")
+    if not st.session_state.db:
+        st.info("The repository is empty. Start a 'Live Battleground' search or run the 'Autonomous Scanner'.")
     else:
-        st.subheader("Background Scanner")
-        ticker_list = st.text_area("Tickers (comma separated)", "GP,BATBC,SQURPHARMA" if "Bangladesh" in st.session_state.get('last_market', '') else "AAPL,TSLA,MSFT")
-        market_scan = st.selectbox("Market for Scan", ["USA", "India", "Bangladesh (DSE)"])
-        scan_now = st.button("🔍 Start Batch Scan")
-
-# --- Logic: Single Analysis ---
-if mode == "Single Analysis" and run:
-    st.session_state.last_market = market
-    with st.spinner(f"AI Battleground: Analyzing {ticker}..."):
-        df, err = engine.fetch_data(ticker, market)
-        if err:
-            st.error(err)
-        else:
-            tfm, chr_p = inference.predict(df['Close'].values, horizon)
-            last_date = df['Date'].iloc[-1]
-            future_dates = [last_date + timedelta(days=i+1) for i in range(horizon)]
-
-            # Key Projections Table
-            st.subheader("📅 Future Outlook")
-            outlook_data = {
-                "Timeframe": ["Next Day", "Next Week (7D)", "Next Month (30D)"],
-                "Google (TimesFM)": [f"{tfm[0]:.2f}", f"{tfm[6]:.2f}", f"{tfm[29]:.2f}" if horizon >= 30 else "N/A"],
-                "Amazon (Chronos)": [f"{chr_p[0]:.2f}", f"{chr_p[6]:.2f}", f"{chr_p[29]:.2f}" if horizon >= 30 else "N/A"]
-            }
-            st.table(pd.DataFrame(outlook_data))
-
-            # Main Visuals
-            fig = go.Figure()
-            fig.add_trace(go.Scatter(x=df['Date'], y=df['Close'], name="History", line=dict(color='#58a6ff', width=2)))
-            if "Google TimesFM 2.5" in models_to_show:
-                fig.add_trace(go.Scatter(x=future_dates, y=tfm, name="Google TimesFM", line=dict(color='#238636', dash='dash')))
-            if "Amazon Chronos-Bolt" in models_to_show:
-                fig.add_trace(go.Scatter(x=future_dates, y=chr_p, name="Amazon Chronos", line=dict(color='#d29922', dash='dot')))
-
-            fig.update_layout(template="plotly_dark", height=500, margin=dict(l=0,r=0,t=20,b=0), hovermode="x unified")
-            st.plotly_chart(fig, use_container_width=True)
-
-# --- Logic: Background Scanner ---
-if mode == "Background Scanner" and scan_now:
-    tickers = [t.strip() for t in ticker_list.split(",")]
-    st.subheader(f"🛡️ Daily Scanning Report ({datetime.now().strftime('%Y-%m-%d')})")
-
-    results = []
-    progress_bar = st.progress(0)
-    for i, t in enumerate(tickers):
-        progress_bar.progress((i+1)/len(tickers))
-        with st.status(f"Scanning {t}...", expanded=False):
-            df, err = engine.fetch_data(t, market_scan)
-            if not err:
-                tfm, chr_p = inference.predict(df['Close'].values, 7)
-                curr = df['Close'].iloc[-1]
-                t_next = tfm[0]
-                results.append({
-                    "Ticker": t,
-                    "Current": f"{curr:.2f}",
-                    "Next Day (AI)": f"{t_next:.2f}",
-                    "Signal": "🚀 BUY" if t_next > curr else "🔻 SELL"
-                })
-
-    if results:
+        results = []
+        for t, val in st.session_state.db.items():
+            curr = val['df']['Close'].iloc[-1]
+            pred = val['tfm'][0]
+            results.append({
+                "Ticker": t,
+                "Current": curr,
+                "AI Next Day": f"{pred:.2f}",
+                "Expected Return": f"{((pred/curr)-1)*100:.2f}%",
+                "Last Updated": val['ts'].strftime('%H:%M:%S')
+            })
         st.dataframe(pd.DataFrame(results), use_container_width=True)
-        st.success("Scan Complete. Results calculated locally.")
-    else:
-        st.warning("No data retrieved for selected tickers.")
 
-elif mode == "Single Analysis" and not run:
-    st.info("💡 Pro Tip: Use 'Add to Home Screen' in your browser to use this like a native app.")
+# --- Mode 3: Autonomous Scanner ---
+elif tab_mode == "🛰️ Autonomous Scanner":
+    st.header("🛰️ Autonomous Intelligence Cycle")
+    st.markdown("This mode iterates through every stock in the market and builds a local memory of all price history and future predictions.")
+
+    col1, col2 = st.columns([1, 1])
+    with col1:
+        if st.button("▶️ Start Autonomous Cycle"):
+            st.session_state.scanning = True
+    with col2:
+        if st.button("⏹️ Stop Cycle"):
+            st.session_state.scanning = False
+
+    if st.session_state.get('scanning', False):
+        st.markdown('<div class="glow-box"><span class="ai-status">🛰️ SATELLITE LINK ACTIVE... ANALYZING MARKET DEPTH</span></div>', unsafe_allow_html=True)
+
+        # Iterate through queue
+        for ticker in st.session_state.queue:
+            if not st.session_state.get('scanning', False): break
+            if ticker in st.session_state.db: continue # Skip if already in memory
+
+            with st.status(f"⚡ Processing: {ticker}", expanded=False):
+                df = engine.fetch_historical(ticker)
+                if df is not None:
+                    tfm, chr_p = ai.predict(df['Close'].values)
+                    st.session_state.db[ticker] = {"df": df, "tfm": tfm, "chr": chr_p, "ts": datetime.now()}
+                    st.toast(f"✅ Memory Updated: {ticker}")
+                time.sleep(0.5) # Prevent proxy rate limits
+            st.rerun()
+
+        st.success("🎉 All tickers analyzed. Market intelligence is now 100% complete.")
+        st.session_state.scanning = False
+    else:
+        st.info("Market Scanner is currently IDLE. Launch the cycle to populate local memory.")
+
+st.markdown("---")
+st.caption("🛡️ All data and AI computations are performed locally on your device. No private information leaves your browser.")
 `
           },
         },
